@@ -1,0 +1,199 @@
+version: "3.9"
+
+x-postgres-base: &pgbase
+  image: postgres:16-alpine
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: ${POSTGRES_USER:-resumeai}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resumeai}
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-resumeai}"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+
+x-svc-env: &svcenv
+  EUREKA_URL: http://eureka-server:8761/eureka
+  DB_USER: ${POSTGRES_USER:-resumeai}
+  DB_PASS: ${POSTGRES_PASSWORD:-resumeai}
+  JWT_SECRET: ${JWT_SECRET}
+
+services:
+  # ---------- Postgres (one DB per service) ------------------------------
+  pg-auth:
+    <<: *pgbase
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-resumeai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resumeai}
+      POSTGRES_DB: authdb
+    volumes: ["pg_auth:/var/lib/postgresql/data"]
+  pg-user:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: userdb }
+    volumes: ["pg_user:/var/lib/postgresql/data"]
+  pg-resume:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: resumedb }
+    volumes: ["pg_resume:/var/lib/postgresql/data"]
+  pg-template:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: templatedb }
+    volumes: ["pg_template:/var/lib/postgresql/data"]
+  pg-ai:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: aidb }
+    volumes: ["pg_ai:/var/lib/postgresql/data"]
+  pg-export:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: exportdb }
+    volumes: ["pg_export:/var/lib/postgresql/data"]
+  pg-jobmatch:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: jobmatchdb }
+    volumes: ["pg_jobmatch:/var/lib/postgresql/data"]
+  pg-notification:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: notificationdb }
+    volumes: ["pg_notification:/var/lib/postgresql/data"]
+  pg-billing:
+    <<: *pgbase
+    environment: { POSTGRES_USER: resumeai, POSTGRES_PASSWORD: resumeai, POSTGRES_DB: billingdb }
+    volumes: ["pg_billing:/var/lib/postgresql/data"]
+
+  # ---------- Mail (dev SMTP) -------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports: ["1025:1025", "8025:8025"]   # SMTP + UI
+
+  # ---------- Eureka ----------------------------------------------------
+  eureka-server:
+    build: { context: ., dockerfile: eureka-server/Dockerfile }
+    container_name: eureka-server
+    ports: ["8761:8761"]
+    environment:
+      EUREKA_HOSTNAME: eureka-server
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  # ---------- Gateway ---------------------------------------------------
+  api-gateway:
+    build: { context: ., dockerfile: api-gateway/Dockerfile }
+    ports: ["8080:8080"]
+    environment:
+      <<: *svcenv
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+
+  # ---------- Microservices --------------------------------------------
+  auth-service:
+    build: { context: ., dockerfile: auth-service/Dockerfile }
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-auth:5432/authdb
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      FRONTEND_REDIRECT_URI: ${FRONTEND_REDIRECT_URI}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-auth: { condition: service_healthy }
+
+  user-service:
+    build: { context: ., dockerfile: user-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-user:5432/userdb
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-user: { condition: service_healthy }
+
+  resume-service:
+    build: { context: ., dockerfile: resume-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-resume:5432/resumedb
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-resume: { condition: service_healthy }
+
+  template-service:
+    build: { context: ., dockerfile: template-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-template:5432/templatedb
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-template: { condition: service_healthy }
+
+  ai-service:
+    build: { context: ., dockerfile: ai-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-ai:5432/aidb
+      LOVABLE_API_KEY: ${LOVABLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-ai: { condition: service_healthy }
+
+  export-service:
+    build: { context: ., dockerfile: export-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-export:5432/exportdb
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-export: { condition: service_healthy }
+
+  jobmatch-service:
+    build: { context: ., dockerfile: jobmatch-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-jobmatch:5432/jobmatchdb
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-jobmatch: { condition: service_healthy }
+
+  notification-service:
+    build: { context: ., dockerfile: notification-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-notification:5432/notificationdb
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-notification: { condition: service_healthy }
+      mailhog: { condition: service_started }
+
+  billing-service:
+    build: { context: ., dockerfile: billing-service/Dockerfile }
+    environment:
+      <<: *svcenv
+      DB_URL: jdbc:postgresql://pg-billing:5432/billingdb
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      pg-billing: { condition: service_healthy }
+
+volumes:
+  pg_auth: {}
+  pg_user: {}
+  pg_resume: {}
+  pg_template: {}
+  pg_ai: {}
+  pg_export: {}
+  pg_jobmatch: {}
+  pg_notification: {}
+  pg_billing: {}

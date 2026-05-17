@@ -1,0 +1,11 @@
+target/
+*.class
+*.jar
+*.iml
+.idea/
+.vscode/
+.mvn/
+mvnw*
+.DS_Store
+.env
+keys/*.pem
