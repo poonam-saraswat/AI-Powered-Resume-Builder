@@ -1,0 +1,107 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns:
+              - http://localhost:4200
+              - http://localhost:3000
+              - http://localhost:5173
+            allowedMethods: [GET, POST, PUT, DELETE, OPTIONS]
+            allowedHeaders: "*"
+            allowCredentials: true
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # Public routes (no JWT filter)
+        - id: auth-public
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/register,/api/auth/login,/api/auth/refresh,/api/auth/forgot-password,/api/auth/reset-password
+
+        # OAuth2 login routes (no JWT filter)
+        - id: oauth2
+          uri: lb://auth-service
+          predicates:
+            - Path=/oauth2/**,/login/oauth2/**
+
+        # Protected routes (JWT required)
+        - id: auth-protected
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: user
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: resume
+          uri: lb://resume-service
+          predicates:
+            - Path=/api/resumes/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: template
+          uri: lb://template-service
+          predicates:
+            - Path=/api/templates/**
+
+        - id: ai
+          uri: lb://ai-service
+          predicates:
+            - Path=/api/ai/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: export
+          uri: lb://export-service
+          predicates:
+            - Path=/api/export/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: jobmatch
+          uri: lb://jobmatch-service
+          predicates:
+            - Path=/api/jobs/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: notification
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - name: JwtAuthFilter
+
+        - id: billing
+          uri: lb://billing-service
+          predicates:
+            - Path=/api/billing/**
+          filters:
+            - name: JwtAuthFilter
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-production-this-is-only-for-dev}
