@@ -1,0 +1,17 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: resume-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/resumedb}
+    username: ${DB_USER:resumeai}
+    password: ${DB_PASS:resumeai}
+  jpa:
+    hibernate: { ddl-auto: validate }
+    open-in-view: false
+  flyway: { enabled: true, baseline-on-migrate: true }
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
